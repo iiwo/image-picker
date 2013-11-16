@@ -2,3 +2,6 @@
 .sass-cache
 page
 build.sh
+Guardfile
+test.html
+nbproject

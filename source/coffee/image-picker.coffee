@@ -35,13 +35,28 @@ class ImagePicker
     @opts.limit     = parseInt(@select.data("limit")) if @select.data("limit")?
     @build_and_append_picker()
 
-  build_and_append_picker: () ->
-    @select.hide() if @opts.hide_select
-    @select.change {picker: this}, (event) ->
-      event.data.picker.sync_picker_with_select()
+  build_and_append_picker: () ->  
+    if @select.is("select")
+      @mode = 'select'
+      @target = @select
+    else
+      @mode = 'checkbox'
+      @multiple = 'multiple'  
+      @checkboxes = jQuery("input[name='"+@select.attr('name')+"']")
+      @target = @checkboxes      
+    @target.hide() if @opts.hide_select
+    @target.closest('label').hide() if @opts.hide_select
+    _this = this
+    @target.each ->
+      jQuery(this).change {picker: _this}, (event) ->
+        event.data.picker.sync_picker_with_select()
     @picker.remove() if @picker?
     @create_picker()
-    @select.after(@picker)
+    #prevent issues with input nested in label
+    if @select.parent().is("label")
+      @select.parent().after(@picker)
+    else
+      @select.after(@picker)
     @sync_picker_with_select()
 
   sync_picker_with_select: () ->
@@ -50,6 +65,26 @@ class ImagePicker
         option.mark_as_selected()
       else
         option.unmark_as_selected()
+        
+  get_item_value: (item) ->
+    if @mode == 'checkbox'
+      values = new Array()
+      jQuery.each @checkboxes.filter(":checked"), ->
+        values.push jQuery(this).val()
+      values     
+    else
+      jQuery(item).val()
+      
+  set_item_value: (item, value) ->    
+    if @mode == 'checkbox'
+      _select = @select
+      @checkboxes.each ->                    
+        if jQuery.inArray(jQuery(this).val(), value) != -1           
+          jQuery(this).prop('checked', true);
+        else
+          jQuery(this).prop('checked', false);                
+    else
+      jQuery(item).val(value)
 
   create_picker: () ->
     @picker         =  jQuery("<ul class='thumbnails image_picker_selector'></ul>")
@@ -64,7 +99,12 @@ class ImagePicker
       container.append jQuery("<li class='group_title'>#{option_group.attr("label")}</li>")
       target_container.append jQuery("<li>").append(container)
       @recursively_parse_option_groups(option_group, container)
-    for option in (new ImagePickerOption(option, this, @opts) for option in scoped_dom.children("option"))
+    items = []
+    if @mode == 'select'
+      items = scoped_dom.children("option")
+    else      
+      items = @checkboxes
+    for option in (new ImagePickerOption(option, this, @opts) for option in items)
       @picker_options.push option
       continue if !option.has_image()
       target_container.append option.node
@@ -75,29 +115,29 @@ class ImagePicker
 
   selected_values: () ->
     if @multiple
-      @select.val() || []
+      @get_item_value(@select) || []
     else
-      [@select.val()]
+      [@get_item_value(@select)]
 
   toggle: (imagepicker_option) ->
     old_values = @selected_values()
     if @multiple
       if imagepicker_option.value() in @selected_values()
         new_values = @selected_values() 
-        new_values.splice(old_values.indexOf(imagepicker_option.value()), 1)
-        @select.val []
-        @select.val new_values
+        new_values.splice(old_values.indexOf(imagepicker_option.value()), 1)        
+        @set_item_value(@select, [])  
+        @set_item_value(@select, new_values)
       else
         if @opts.limit? && @selected_values().length >= @opts.limit
           if @opts.limit_reached?
             @opts.limit_reached.call(@select)
-        else
-          @select.val @selected_values().concat imagepicker_option.value()
+        else                    
+          @set_item_value(@select, @selected_values().concat(imagepicker_option.value()))          
     else
       if @has_implicit_blanks() && imagepicker_option.is_selected()
-        @select.val("")
+        @set_item_value(@select,"")
       else
-        @select.val(imagepicker_option.value())
+        @set_item_value(@select, imagepicker_option.value())
     unless both_array_are_equal(old_values, @selected_values())
       @select.change()
       @opts.changed.call(@select) if @opts.changed?
@@ -107,7 +147,7 @@ class ImagePickerOption
   constructor: (option_element, @picker, @opts={}) ->
     @option = jQuery(option_element)
     @create_node()
-
+  
   has_image: () ->
     @option.data("img-src")?
 
@@ -115,7 +155,7 @@ class ImagePickerOption
     !(@value()? && @value() != "")
 
   is_selected: () ->
-    select_value = @picker.select.val()
+    select_value = @picker.get_item_value(@picker.select)    
     if @picker.multiple
       jQuery.inArray(@value(), select_value) >= 0
     else
@@ -128,6 +168,7 @@ class ImagePickerOption
     @node.find(".thumbnail").removeClass("selected")
 
   value: () ->
+    @picker.get_item_value(@option)
     @option.val()
 
   label: () ->
